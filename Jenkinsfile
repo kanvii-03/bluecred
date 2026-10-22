@@ -1,102 +1,51 @@
-pipeline {
+﻿pipeline {
     agent any
 
-    options {
-        timestamps()
-    }
-
     environment {
-        BACKEND_IMAGE = 'kanvii03/bluecarbon-backend'
-        FRONTEND_IMAGE = 'kanvii03/bluecarbon-frontend'
+        DOCKER_IMAGE = 'kanvii03/bluecred:latest'
+        K8S_API = 'https://192.168.49.2:8443'
+        KUBECONFIG = '/var/jenkins_home/.kube/config'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/kanvii-03/bluecred.git'
             }
         }
 
-        stage('Test Backend') {
+        stage('Build Docker Image') {
             steps {
-                sh '''
-                    docker run --rm \
-                      -v "$WORKSPACE/backend:/app" \
-                      -w /app node:22-alpine \
-                      sh -c "npm ci && node --check src/index.js"
-                '''
+                sh 'docker build -t $DOCKER_IMAGE .'
             }
         }
 
-        stage('Build Frontend') {
+        stage('Push to Docker Hub') {
             steps {
-                sh '''
-                    docker run --rm \
-                      -v "$WORKSPACE/frontend:/app" \
-                      -w /app node:22-alpine \
-                      sh -c "npm ci && npm run build"
-                '''
-            }
-        }
-
-        stage('Build Docker Images') {
-            steps {
-                docker build -f backend/dockerfile -t "$BACKEND_IMAGE:$BUILD_NUMBER" -t "$BACKEND_IMAGE:latest" ./backend
-                docker build -f frontend/dockerfile -t "$FRONTEND_IMAGE:$BUILD_NUMBER" -t "$FRONTEND_IMAGE:latest" ./frontend
-            }
-        }
-
-        stage('Push Images to Docker Hub') {
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DH_USER',
-                        passwordVariable: 'DH_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        set +x
-                        echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
-                        docker push "$BACKEND_IMAGE:$BUILD_NUMBER"
-                        docker push "$BACKEND_IMAGE:latest"
-                        docker push "$FRONTEND_IMAGE:$BUILD_NUMBER"
-                        docker push "$FRONTEND_IMAGE:latest"
-                        docker logout
-                    '''
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh 'echo $PASS | docker login -u $USER --password-stdin'
+                    sh 'docker push $DOCKER_IMAGE'
                 }
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Deploy to Minikube') {
             steps {
-                sh '''
-                    kubectl apply -f k8s/
-                    kubectl set image deployment/bluecarbon-backend backend="$BACKEND_IMAGE:$BUILD_NUMBER"
-                    kubectl set image deployment/bluecarbon-frontend frontend="$FRONTEND_IMAGE:$BUILD_NUMBER"
-                    kubectl rollout status deployment/bluecarbon-backend --timeout=180s
-                    kubectl rollout status deployment/bluecarbon-frontend --timeout=180s
-                '''
+                sh 'kubectl --kubeconfig=$KUBECONFIG --server=$K8S_API --insecure-skip-tls-verify=true apply -f k8s/'
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                sh '''
-                    kubectl get deployments
-                    kubectl get pods
-                    kubectl get services
-                '''
+                sh 'kubectl --kubeconfig=$KUBECONFIG --server=$K8S_API --insecure-skip-tls-verify=true get pods'
+                sh 'kubectl --kubeconfig=$KUBECONFIG --server=$K8S_API --insecure-skip-tls-verify=true get svc'
             }
         }
     }
 
     post {
-        success {
-            echo 'BlueCred CI/CD pipeline completed successfully.'
-        }
-        failure {
-            echo 'Pipeline failed. Check Console Output for the first error.'
+        always {
+            sh 'docker logout'
         }
     }
 }
