@@ -1,10 +1,11 @@
-pipeline {
+﻿pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = 'kanvii03/bluecred:latest'
-        K8S_API = 'https://192.168.49.2:8443'
+        BACKEND_IMAGE = 'kanvii03/bluecarbon-backend:latest'
+        FRONTEND_IMAGE = 'kanvii03/bluecarbon-frontend:latest'
         KUBECONFIG = '/var/jenkins_home/.kube/config'
+        K8S_API = 'https://192.168.49.2:8443'
     }
 
     stages {
@@ -14,31 +15,44 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build Backend Image') {
             steps {
-                sh 'docker build -t $DOCKER_IMAGE .'
+                sh 'docker build -t $BACKEND_IMAGE -f backend/dockerfile ./backend'
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Build Frontend Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    sh 'echo $PASS | docker login -u $USER --password-stdin'
-                    sh 'docker push $DOCKER_IMAGE'
+                sh 'docker build -t $FRONTEND_IMAGE -f frontend/dockerfile ./frontend'
+            }
+        }
+
+        stage('Push Images to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push "$BACKEND_IMAGE"
+                        docker push "$FRONTEND_IMAGE"
+                    '''
                 }
             }
         }
 
         stage('Deploy to Minikube') {
             steps {
-                sh 'kubectl --kubeconfig=$KUBECONFIG --server=$K8S_API --insecure-skip-tls-verify=true apply -f k8s/'
+                sh '''
+                    kubectl --kubeconfig="$KUBECONFIG" --server="$K8S_API" --insecure-skip-tls-verify=true apply -f k8s/
+                '''
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                sh 'kubectl --kubeconfig=$KUBECONFIG --server=$K8S_API --insecure-skip-tls-verify=true get pods'
-                sh 'kubectl --kubeconfig=$KUBECONFIG --server=$K8S_API --insecure-skip-tls-verify=true get svc'
+                sh '''
+                    kubectl --kubeconfig="$KUBECONFIG" --server="$K8S_API" --insecure-skip-tls-verify=true get pods
+                    kubectl --kubeconfig="$KUBECONFIG" --server="$K8S_API" --insecure-skip-tls-verify=true get services
+                '''
             }
         }
     }
