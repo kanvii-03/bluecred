@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: aasth21/bluecarbon-backend:latest
+          image: kanvii03/bluecarbon-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 5000

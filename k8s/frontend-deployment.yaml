@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: aasth21/bluecarbon-frontend:latest
+          image: kanvii03/bluecarbon-frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80

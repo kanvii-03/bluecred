@@ -1,4 +1,3 @@
-
 pipeline {
     agent any
 
@@ -7,9 +6,8 @@ pipeline {
     }
 
     environment {
-        DOCKER_USER = 'aasth21'
-        BACKEND_IMAGE = 'aasth21/bluecarbon-backend'
-        FRONTEND_IMAGE = 'aasth21/bluecarbon-frontend'
+        BACKEND_IMAGE = 'kanvii03/bluecarbon-backend'
+        FRONTEND_IMAGE = 'kanvii03/bluecarbon-frontend'
     }
 
     stages {
@@ -43,15 +41,8 @@ pipeline {
 
         stage('Build Docker Images') {
             steps {
-                sh '''
-                    docker build \
-                      -t "$BACKEND_IMAGE:$BUILD_NUMBER" \
-                      -t "$BACKEND_IMAGE:latest" ./backend
-
-                    docker build \
-                      -t "$FRONTEND_IMAGE:$BUILD_NUMBER" \
-                      -t "$FRONTEND_IMAGE:latest" ./frontend
-                '''
+                docker build -f backend/dockerfile -t "$BACKEND_IMAGE:$BUILD_NUMBER" -t "$BACKEND_IMAGE:latest" ./backend
+                docker build -f frontend/dockerfile -t "$FRONTEND_IMAGE:$BUILD_NUMBER" -t "$FRONTEND_IMAGE:latest" ./frontend
             }
         }
 
@@ -66,15 +57,11 @@ pipeline {
                 ]) {
                     sh '''
                         set +x
-                        echo "$DH_TOKEN" | docker login \
-                          -u "$DH_USER" --password-stdin
-
+                        echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
                         docker push "$BACKEND_IMAGE:$BUILD_NUMBER"
                         docker push "$BACKEND_IMAGE:latest"
-
                         docker push "$FRONTEND_IMAGE:$BUILD_NUMBER"
                         docker push "$FRONTEND_IMAGE:latest"
-
                         docker logout
                     '''
                 }
@@ -85,20 +72,10 @@ pipeline {
             steps {
                 sh '''
                     kubectl apply -f k8s/
-
-                    kubectl set image \
-                      deployment/bluecarbon-backend \
-                      backend="$BACKEND_IMAGE:$BUILD_NUMBER"
-
-                    kubectl set image \
-                      deployment/bluecarbon-frontend \
-                      frontend="$FRONTEND_IMAGE:$BUILD_NUMBER"
-
-                    kubectl rollout status \
-                      deployment/bluecarbon-backend --timeout=180s
-
-                    kubectl rollout status \
-                      deployment/bluecarbon-frontend --timeout=180s
+                    kubectl set image deployment/bluecarbon-backend backend="$BACKEND_IMAGE:$BUILD_NUMBER"
+                    kubectl set image deployment/bluecarbon-frontend frontend="$FRONTEND_IMAGE:$BUILD_NUMBER"
+                    kubectl rollout status deployment/bluecarbon-backend --timeout=180s
+                    kubectl rollout status deployment/bluecarbon-frontend --timeout=180s
                 '''
             }
         }
@@ -116,9 +93,8 @@ pipeline {
 
     post {
         success {
-            echo 'BlueCarbon MRV CI/CD pipeline completed successfully.'
+            echo 'BlueCred CI/CD pipeline completed successfully.'
         }
-
         failure {
             echo 'Pipeline failed. Check Console Output for the first error.'
         }
